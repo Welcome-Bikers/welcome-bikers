@@ -63,6 +63,7 @@ test.describe("Real Bro assistant", () => {
   });
 
   test("labels local fallback honestly when the live provider is unavailable", async ({ page }) => {
+    await page.route("**/health*", (route) => route.abort());
     await page.route("**/or-proxy.json*", (route) =>
       route.fulfill({ status: 200, contentType: "application/json", body: '{"base":""}' }),
     );
