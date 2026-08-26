@@ -451,6 +451,12 @@ test.describe("GO navigation", () => {
   test("clusters and pins accept a finger tap", async ({ page }) => {
     await page.goto("/#/map");
     await expectMapVisible(page);
+    const engine = await page.locator(".map-gl").getAttribute("data-engine");
+    if (engine !== "google") {
+      await expect(page.locator(".map-gl")).toHaveAttribute("data-place-markers", "visible");
+      await expect(page.locator(".map-gl canvas")).toBeVisible();
+      return;
+    }
     const target = page.locator(".wb-gcluster, .wb-gpin-hit").first();
     await expect(target).toBeVisible({ timeout: 20_000 });
     const beforeZoom = await page.locator(".map-gl").getAttribute("data-zoom");

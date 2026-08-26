@@ -92,7 +92,7 @@ export default {
         headers: {
           Authorization: `Bearer ${key}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": String(env.PUBLIC_APP_URL || "https://denloper.github.io/welcome-bikers/"),
+          "HTTP-Referer": String(env.PUBLIC_APP_URL || "https://welcome-bikers.github.io/welcome-bikers/"),
           "X-Title": "Welcome Bikers",
         },
         body,

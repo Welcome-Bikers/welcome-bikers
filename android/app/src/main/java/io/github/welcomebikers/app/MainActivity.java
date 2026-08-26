@@ -1,4 +1,4 @@
-package io.github.denloper.welcomebikers;
+package io.github.welcomebikers.app;
 
 import android.os.Bundle;
 import android.view.View;

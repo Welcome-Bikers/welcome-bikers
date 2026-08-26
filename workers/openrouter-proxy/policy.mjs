@@ -1,5 +1,5 @@
 const DEFAULT_ORIGINS = [
-  "https://denloper.github.io",
+  "https://welcome-bikers.github.io",
   "https://localhost",
   "capacitor://localhost",
   "http://127.0.0.1:4173",

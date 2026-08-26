@@ -13,11 +13,11 @@ const decode = (value) => JSON.parse(new TextDecoder().decode(value));
 
 test("origin policy is explicit and configurable", () => {
   const defaults = allowedOrigins();
-  assert.equal(isAllowedOrigin("https://denloper.github.io", defaults), true);
+  assert.equal(isAllowedOrigin("https://welcome-bikers.github.io", defaults), true);
   assert.equal(isAllowedOrigin("https://attacker.example", defaults), false);
   const configured = allowedOrigins("https://app.example,capacitor://localhost");
   assert.equal(isAllowedOrigin("https://app.example", configured), true);
-  assert.equal(isAllowedOrigin("https://denloper.github.io", configured), false);
+  assert.equal(isAllowedOrigin("https://welcome-bikers.github.io", configured), false);
 });
 
 test("only exact proxy endpoints are accepted", () => {

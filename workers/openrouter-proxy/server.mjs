@@ -16,7 +16,7 @@ const PORT = Number(process.env.PORT || 8787);
 const KEY = String(process.env.OPENROUTER_API_KEY || "").trim();
 const ORIGINS = allowedOrigins(process.env.ALLOWED_ORIGINS);
 const RATE_LIMIT = Math.max(1, Number(process.env.PROXY_RATE_LIMIT || 40));
-const APP_URL = String(process.env.PUBLIC_APP_URL || "https://denloper.github.io/welcome-bikers/").trim();
+const APP_URL = String(process.env.PUBLIC_APP_URL || "https://welcome-bikers.github.io/welcome-bikers/").trim();
 const UPSTREAM_TIMEOUT_MS = Math.max(5_000, Number(process.env.UPSTREAM_TIMEOUT_MS || 45_000));
 const TRUST_PROXY = String(process.env.TRUST_PROXY || "").toLowerCase() === "true";
 

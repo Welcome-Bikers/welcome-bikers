@@ -16,7 +16,7 @@ for (const cfg of tries) {
     headers: {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://denloper.github.io/welcome-bikers/",
+      "HTTP-Referer": "https://welcome-bikers.github.io/welcome-bikers/",
       "X-Title": "Welcome Bikers CI TTS probe",
     },
     body: JSON.stringify({

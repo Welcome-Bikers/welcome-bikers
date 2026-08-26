@@ -9,7 +9,7 @@ const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
   headers: {
     Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://denloper.github.io/welcome-bikers/",
+    "HTTP-Referer": "https://welcome-bikers.github.io/welcome-bikers/",
     "X-Title": "Welcome Bikers CI probe",
   },
   body: JSON.stringify({

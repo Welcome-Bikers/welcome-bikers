@@ -1,13 +1,13 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "io.github.denloper.welcomebikers",
+  appId: "io.github.welcomebikers.app",
   appName: "Welcome Bikers",
   webDir: "dist",
   backgroundColor: "#111111",
   server: {
     androidScheme: "https",
-    hostname: "denloper.github.io",
+    hostname: "welcome-bikers.github.io",
   },
   android: {
     allowMixedContent: false,
