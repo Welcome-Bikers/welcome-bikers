@@ -220,7 +220,10 @@ export function localChatReply(text: string): string {
     t === "hello" ||
     t === "hi"
   ) {
-    return 'Yo. Real Bro online. Want a route — say "ride to Podgorica". Want places — "what bars are in Montenegro?"';
+    const shortGreeting = t.replace(/[.!?]+$/g, "");
+    if (shortGreeting === "hi") return "Hey, bro. I’m in offline mode right now. Need a route or a place to stop?";
+    if (shortGreeting === "hello") return "Yo, rider. Live AI is offline, but routes and place search still work.";
+    return 'Real Bro is in offline mode. Try "ride to Podgorica" or "what bars are in Montenegro?"';
   }
   if (/\b(what('?s|\s+is)\s+your\s+name|who\s+are\s+you|как\s+тебя\s+зовут|как\s+зовут)\b/i.test(t)) {
     return "Name's Real Bro — in-app ride buddy. Say \"ride to Kotor\" or \"what bars are in Montenegro\" and I lock the cards.";

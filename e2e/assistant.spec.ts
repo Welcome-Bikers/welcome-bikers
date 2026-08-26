@@ -11,6 +11,7 @@ test.describe("Real Bro assistant", () => {
     await row.tap();
     await expect(page.getByTestId("assistant-sheet")).toBeVisible();
     await expect(page.locator(".rb-bubble.bro").first()).toContainText(/Yo, bro/i);
+    await expect(page.locator(".rb-state")).toHaveText("Ready");
     await expect(page.getByTestId("assistant-input")).toBeVisible();
   });
 
@@ -58,6 +59,19 @@ test.describe("Real Bro assistant", () => {
     await page.getByTestId("assistant-input").fill("how is the weather?");
     await page.getByTestId("assistant-send").tap();
     await expect(page.locator(".rb-bubble.bro").last()).toContainText(/build a route/i, { timeout: 15_000 });
+    await expect(page.locator(".rb-state")).toHaveText("Online");
+  });
+
+  test("labels local fallback honestly when the live provider is unavailable", async ({ page }) => {
+    await page.route("**/or-proxy.json*", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: '{"base":""}' }),
+    );
+    await page.goto("/#/");
+    await page.getByTestId("assistant-row").tap();
+    await page.getByTestId("assistant-input").fill("hello");
+    await page.getByTestId("assistant-send").tap();
+    await expect(page.locator(".rb-bubble.bro").last()).toContainText(/Live AI is offline/i);
+    await expect(page.locator(".rb-state")).toHaveText("Offline mode");
   });
 
   test("closing Real Bro cancels a delayed provider reply", async ({ page }) => {

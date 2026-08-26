@@ -1,10 +1,15 @@
 /** Resolve CORS-friendly OpenRouter proxy base (no trailing slash). Key stays on the proxy. */
 
 const viteEnv = import.meta.env ?? {};
-const DISCOVERY_URLS = String(viteEnv.VITE_OPENROUTER_DISCOVERY_URL || "or-proxy.json")
+const DEFAULT_DISCOVERY_URLS = [
+  "or-proxy.json",
+  "https://raw.githubusercontent.com/Welcome-Bikers/welcome-bikers/proxy-url/public/or-proxy.json",
+];
+const configuredDiscovery = String(viteEnv.VITE_OPENROUTER_DISCOVERY_URL || "")
   .split(",")
   .map((url) => url.trim())
   .filter(Boolean);
+const DISCOVERY_URLS = configuredDiscovery.length ? configuredDiscovery : DEFAULT_DISCOVERY_URLS;
 
 let resolved: string | null | undefined;
 let resolving: Promise<string> | null = null;

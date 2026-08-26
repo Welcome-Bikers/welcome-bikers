@@ -64,7 +64,8 @@ test("falls back to unknown for small talk", () => {
 });
 
 test("localChatReply answers hello and AI questions without the weather canned line", () => {
-  expect(localChatReply("hello")).toMatch(/Real Bro online/i);
+  expect(localChatReply("hello")).toMatch(/Live AI is offline/i);
+  expect(localChatReply("hi")).not.toBe(localChatReply("hello"));
   expect(localChatReply("hello are you ai?")).toMatch(/in-app AI/i);
   expect(localChatReply("how is the weather?")).toMatch(/Weather/i);
   expect(localChatReply("okay")).toMatch(/Solid/i);

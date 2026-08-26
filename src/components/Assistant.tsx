@@ -24,6 +24,7 @@ import { hushVoice, speakText, warmVoices } from "../lib/voice";
 import type { Place, PlaceType } from "../types";
 
 type Phase = "idle" | "listening" | "speaking";
+type ProviderState = "unknown" | "online" | "offline";
 
 type Card = { key: string; name: string; sub: string; lat: number; lon: number; rating?: number | null };
 
@@ -153,6 +154,7 @@ export function RealBro() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
+  const [providerState, setProviderState] = useState<ProviderState>("unknown");
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const captureRef = useRef<RecSession | null>(null);
   const useRecordRef = useRef(false);
@@ -558,6 +560,7 @@ export function RealBro() {
         .map((m) => ({ role: m.role === "bro" ? "assistant" : "user", content: m.text }));
       const ai = await askRealBro(text, history, controller.signal);
       if (!queryActive(token)) return;
+      setProviderState(ai ? "online" : "offline");
       if (ai?.intent === "ride" && ai.query) {
         await answerRide(ai.query, token, ai.reply);
         return;
@@ -612,7 +615,18 @@ export function RealBro() {
     nav(`/map?to=${card.lat},${card.lon}&name=${encodeURIComponent(card.name)}`);
   }
 
-  const stateLabel = phase === "listening" ? "Listening…" : phase === "speaking" ? "Speaking…" : "Online";
+  const stateLabel =
+    phase === "listening"
+      ? "Listening…"
+      : phase === "speaking"
+        ? "Speaking…"
+        : busy
+          ? "Thinking…"
+          : providerState === "online"
+            ? "Online"
+            : providerState === "offline"
+              ? "Offline mode"
+              : "Ready";
 
   return (
     <>
