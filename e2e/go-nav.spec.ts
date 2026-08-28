@@ -357,6 +357,12 @@ test.describe("GO navigation", () => {
   });
 
   test("MapLibre multi-stop preview shows only its numbered Stops", async ({ page, context }) => {
+    const styleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error" && message.text().includes('layers.wb-route')) {
+        styleErrors.push(message.text());
+      }
+    });
     await context.grantPermissions(["geolocation"]);
     await context.setGeolocation(START);
     await page.route(/maps\.googleapis\.com/, (route) => route.abort());
@@ -371,6 +377,7 @@ test.describe("GO navigation", () => {
     await expect(routeStops.nth(0)).toHaveText("1");
     await expect(routeStops.nth(1)).toHaveText("2");
     await expect(routeStops.nth(2)).toHaveText("3");
+    expect(styleErrors).toEqual([]);
   });
 
   test("Add waypoint picks a point on the map", async ({ page, context }) => {
