@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       VitePWA({
+        selfDestroying: true,
         registerType: "autoUpdate",
         injectRegister: false,
         includeAssets: ["icons/app-icon.svg"],
