@@ -61,15 +61,6 @@ export function IconFilter({ className }: P) {
     </svg>
   );
 }
-export function IconLayers({ className }: P) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path d="M12 3.5 20 8l-8 4.5L4 8z" />
-      <path d="m6.2 12.2 5.8 3.3 5.8-3.3" />
-      <path d="m6.2 15.6 5.8 3.3 5.8-3.3" />
-    </svg>
-  );
-}
 export function IconPhone({ className }: P) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -211,19 +202,6 @@ export function IconPin({ className }: P) {
     </svg>
   );
 }
-export function IconStar({ className }: P) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-        d="m12 3.2 2.35 5.7 6.2.54-4.7 4.08 1.45 6.05L12 16.7 6.7 19.57l1.45-6.05-4.7-4.08 6.2-.54z"
-      />
-    </svg>
-  );
-}
-
 export function IconPencil({ className }: P) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">

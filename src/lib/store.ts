@@ -1,4 +1,4 @@
-import type { Booking, ChatMessage, Review, User } from "../types";
+import type { Booking, ChatMessage, Place, Review, User } from "../types";
 
 const KEY = "wb.v2";
 const PASSWORD_ITERATIONS = 120_000;
@@ -16,7 +16,7 @@ type State = {
   messages: ChatMessage[];
   reviews: Review[];
   bookings: Booking[];
-  pendingPlaces: unknown[];
+  pendingPlaces: Place[];
 };
 
 const empty: State = {
@@ -185,7 +185,7 @@ export const store = {
     save(s);
     return s.bookings;
   },
-  addPending(place: unknown) {
+  addPending(place: Place) {
     const s = load();
     s.pendingPlaces.unshift(place);
     save(s);

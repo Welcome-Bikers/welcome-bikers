@@ -1,7 +1,7 @@
 export type LatLon = { lat: number; lon: number };
 
 export type RouteProfile = "fastest" | "scenic" | "no-highways";
-export type RouteProvider = "google" | "osrm" | "valhalla";
+type RouteProvider = "google" | "osrm" | "valhalla";
 
 export type RoutingOptions = {
   profile: RouteProfile;

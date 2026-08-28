@@ -11,6 +11,7 @@
     "test:proxy": "node --test workers/openrouter-proxy/policy.test.mjs",
     "test:e2e": "playwright test",
     "test": "npm run test:proxy && vite build && playwright test",
+    "android:icons": "node scripts/make-android-icons.mjs",
     "android:sync": "vite build && npx cap sync android",
     "android:apk": "vite build && npx cap sync android && cd android && gradlew.bat assembleDebug"
   },

@@ -12,7 +12,17 @@ export function Help() {
   const [alerts, setAlerts] = useState<SosAlert[]>([]);
 
   useEffect(() => {
-    loadSos().then(setAlerts);
+    let active = true;
+    loadSos()
+      .then((items) => {
+        if (active) setAlerts(items);
+      })
+      .catch(() => {
+        if (active) setAlerts([]);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   function locate() {

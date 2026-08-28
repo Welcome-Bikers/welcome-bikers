@@ -56,15 +56,3 @@ export const TYPE_LABEL: Record<PlaceType, string> = {
   viewpoints: "Viewpoint",
   historical: "Historical place",
 };
-
-export const TYPE_COLOR: Record<PlaceType, string> = {
-  hotels: "#1f1f1f",
-  shops: "#c1121f",
-  bars: "#1f1f1f",
-  restaurants: "#1f1f1f",
-  services: "#c1121f",
-  rent: "#1f1f1f",
-  festivals: "#c1121f",
-  viewpoints: "#c1121f",
-  historical: "#c1121f",
-};

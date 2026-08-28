@@ -109,7 +109,9 @@ Real Bro combines local intent parsing with an OpenRouter-backed response:
 - mobile voice recording uses `/transcribe`;
 - neural voice uses `/speech` and falls back to browser speech.
 
-The browser never receives the OpenRouter API key. Closing or unmounting Real Bro aborts pending provider calls, microphone sessions, and speech playback.
+Accepted messages enter a FIFO queue and are processed exactly once. Every active request has a deadline and an abort signal shared by provider and geocoding work. A reply bubble is inserted on the media `playing`/speech `start` event; if speech cannot start within ten seconds, delayed audio is cancelled and the text is shown.
+
+The browser never receives the OpenRouter API key. Closing or unmounting Real Bro clears queued work and aborts pending provider calls, microphone sessions, and speech playback.
 
 ## Persistence
 

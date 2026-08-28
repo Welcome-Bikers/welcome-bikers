@@ -134,6 +134,15 @@ function requestCompassAccess() {
   }
 }
 
+async function shareText(title: string, text: string) {
+  try {
+    if (navigator.share) await navigator.share({ title, text });
+    else await navigator.clipboard.writeText(text);
+  } catch {
+    // The user cancelled sharing or the platform rejected the request.
+  }
+}
+
 function mapKind(light: boolean, sat: boolean): MapKind {
   if (sat) return "satellite";
   return light ? "vector-light" : "vector-dark";
@@ -327,8 +336,18 @@ export function MapPage() {
   }, [voiceMuted]);
 
   useEffect(() => {
-    loadPlaces().then(setPlaces);
+    let active = true;
+    loadPlaces()
+      .then((items) => {
+        if (active) setPlaces(items);
+      })
+      .catch(() => {
+        if (active) setPlaces([]);
+      });
     warmVoices();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -881,8 +900,7 @@ export function MapPage() {
   function sharePicked() {
     if (!picked) return;
     const text = `${picked.name} — ${picked.city}, ${picked.country}`;
-    if (navigator.share) navigator.share({ title: picked.name, text });
-    else navigator.clipboard.writeText(text);
+    void shareText(picked.name, text);
   }
 
   function routeToPicked() {
@@ -894,8 +912,7 @@ export function MapPage() {
   function shareRoute() {
     if (!stops || !drive) return;
     const text = `${stops[0].label} → ${stops[stops.length - 1].label} · ${formatMeters(drive.distance)} · ${formatDriveTime(drive.duration)}`;
-    if (navigator.share) navigator.share({ title: "Route", text });
-    else navigator.clipboard.writeText(text);
+    void shareText("Route", text);
   }
 
   async function useMyLocation() {

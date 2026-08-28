@@ -28,8 +28,9 @@ npm run test:e2e
 Playwright covers:
 
 - Real Bro local and provider-backed intent handling;
+- FIFO processing of consecutive Real Bro requests;
 - mobile recording and transcription retries;
-- TTS and microphone exclusion;
+- event-driven text/TTS start synchronization and microphone exclusion;
 - map engine fallback;
 - route preview and multi-stop markers;
 - GO camera, HUD, exit, and GPS-start behavior;
@@ -62,6 +63,10 @@ Changes to Real Bro must preserve:
 - closing the panel aborts pending chat, speech, and recording work;
 - unmounting releases every microphone track;
 - delayed speech cannot start while recording;
+- iOS audio unlock survives the transition into microphone recording;
+- neural speech tries the next provider after an upstream failure;
+- consecutive messages are not overwritten, duplicated, or reordered;
+- the complete reply appears when audio playback starts;
 - expired proxy discovery retries once;
 - user-visible fallback remains available when the provider is unavailable.
 
@@ -71,6 +76,7 @@ Changes to local profile or data flows must preserve:
 - a passwordless record never authenticates;
 - existing plaintext records migrate only after a correct password;
 - booking dates are future and ordered;
+- country snapshots use matching two-letter ISO and flag codes;
 - local-only actions are not described as remote success.
 
 ## CI gate
@@ -83,7 +89,7 @@ Production deployment must depend on:
 4. production build;
 5. Playwright.
 
-Provider-dependent live tests should run separately so provider outages do not hide deterministic regressions. Their failure still requires investigation before a release that changes Real Bro provider behavior.
+Provider-dependent live tests run separately so provider outages do not hide deterministic regressions. The live gate checks chat plus a TTS-to-STT roundtrip. Real Bro voice tests also run against an emulated iPhone WebKit project.
 
 ## Physical-device checks
 

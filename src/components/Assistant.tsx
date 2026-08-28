@@ -20,15 +20,16 @@ import {
   transcribeAudioBlob,
   type RecSession,
 } from "../lib/stt";
-import { hushVoice, speakText, warmVoices } from "../lib/voice";
+import { hushVoice, speakText, unlockVoice, warmVoices } from "../lib/voice";
 import type { Place, PlaceType } from "../types";
 
 type Phase = "idle" | "listening" | "speaking";
-type ProviderState = "unknown" | "online" | "offline";
+type ProviderState = "unknown" | "online" | "local" | "offline";
 
 type Card = { key: string; name: string; sub: string; lat: number; lon: number; rating?: number | null };
 
 type Msg = { id: number; role: "user" | "bro"; text: string; cards?: Card[] };
+type PendingQuery = { text: string; userMessageId: number };
 
 type SpeechRecognitionLike = {
   lang: string;
@@ -66,7 +67,7 @@ function placeCard(p: Place): Card {
   };
 }
 
-export function RealBroAvatar({ phase, size = 46 }: { phase: Phase; size?: number }) {
+function RealBroAvatar({ phase, size = 46 }: { phase: Phase; size?: number }) {
   return (
     <span className={`rb-ava ${phase}`} style={{ width: size, height: size }} data-phase={phase}>
       <svg viewBox="0 0 64 64" aria-hidden="true">
@@ -155,12 +156,12 @@ export function RealBro() {
   const [busy, setBusy] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState("");
   const [providerState, setProviderState] = useState<ProviderState>("unknown");
+  const msgsRef = useRef<Msg[]>([]);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const captureRef = useRef<RecSession | null>(null);
   const useRecordRef = useRef(false);
   const startingRef = useRef(false);
   const voiceTokenRef = useRef(0);
-  const speakToken = useRef(0);
   const wantListen = useRef(false);
   const heardRef = useRef("");
   const restartTimer = useRef(0);
@@ -168,11 +169,12 @@ export function RealBro() {
   const levelPoll = useRef(0);
   const handleQueryRef = useRef<(raw: string) => Promise<void>>(async () => undefined);
   const lastSubmitRef = useRef({ text: "", at: 0 });
-  const busyRef = useRef(false);
-  const queuedRef = useRef<string | null>(null);
+  const queryQueueRef = useRef<PendingQuery[]>([]);
+  const workerActiveRef = useRef(false);
+  const workerGenerationRef = useRef(0);
+  const activeQueryTokenRef = useRef(0);
   const openRef = useRef(false);
   const aliveRef = useRef(true);
-  const queryGenerationRef = useRef(0);
   const queryAbortRef = useRef<AbortController | null>(null);
   const transcribeAbortRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -336,8 +338,6 @@ export function RealBro() {
     stopSpeechRecOnly();
     clearListenTimers();
     try {
-      // Same tap as startListening — do not await a timeout or iOS drops the gesture.
-      hushVoice();
       if (!wantListen.current) {
         startingRef.current = false;
         return;
@@ -401,7 +401,10 @@ export function RealBro() {
       const session = captureRef.current;
       captureRef.current = null;
       void session?.stop();
-      queryGenerationRef.current += 1;
+      workerGenerationRef.current += 1;
+      activeQueryTokenRef.current += 1;
+      queryQueueRef.current = [];
+      workerActiveRef.current = false;
       queryAbortRef.current?.abort();
       queryAbortRef.current = null;
       transcribeAbortRef.current?.abort();
@@ -432,36 +435,79 @@ export function RealBro() {
     };
   }, [open]);
 
-  function push(msg: Omit<Msg, "id">) {
-    setMsgs((m) => [...m, { ...msg, id: ++seq }]);
+  function push(msg: Omit<Msg, "id">): number {
+    const item = { ...msg, id: ++seq };
+    const next = [...msgsRef.current, item];
+    msgsRef.current = next;
+    setMsgs(next);
+    return item.id;
   }
 
-  function say(text: string) {
-    // Never let a late assistant reply steal the mobile audio session from an active mic.
-    if (wantListen.current || captureRef.current || startingRef.current) {
-      hushVoice();
-      speakToken.current++;
-      return;
-    }
-    const token = ++speakToken.current;
-    hushVoice();
-    const done = () => {
-      if (speakToken.current === token) setPhase("idle");
+  function queryActive(workerGeneration: number, token: number): boolean {
+    return (
+      aliveRef.current &&
+      openRef.current &&
+      workerGenerationRef.current === workerGeneration &&
+      activeQueryTokenRef.current === token
+    );
+  }
+
+  async function deliverReply(
+    text: string,
+    cards: Card[] | undefined,
+    workerGeneration: number,
+    token: number,
+  ) {
+    let revealed = false;
+    const reveal = () => {
+      if (revealed || !queryActive(workerGeneration, token)) return;
+      revealed = true;
+      push({ role: "bro", text, cards });
     };
-    setPhase("speaking");
-    const started = speakText(text, "en-US", done);
-    if (!started) {
-      setPhase("idle");
+
+    // Never let a late reply steal the audio session from an active microphone.
+    if (
+      wantListen.current ||
+      captureRef.current ||
+      startingRef.current ||
+      document.visibilityState !== "visible"
+    ) {
+      hushVoice();
+      reveal();
       return;
     }
-    // Neural TTS needs time to fetch + play; headless may never fire onend.
-    window.setTimeout(done, Math.min(45_000, 4_000 + text.length * 120));
+
+    const voiceStartDeadline = window.setTimeout(() => {
+      if (!revealed && queryActive(workerGeneration, token)) {
+        hushVoice();
+        reveal();
+      }
+    }, 10_000);
+    const spoken = await speakText(text, "en-US", {
+      onStart: () => {
+        window.clearTimeout(voiceStartDeadline);
+        if (!queryActive(workerGeneration, token)) {
+          hushVoice();
+          return;
+        }
+        reveal();
+        setPhase("speaking");
+      },
+      onEnd: () => {
+        if (queryActive(workerGeneration, token) && !wantListen.current) setPhase("idle");
+      },
+    });
+    window.clearTimeout(voiceStartDeadline);
+    // If both neural and browser speech fail, the rider still gets the answer.
+    if (!spoken) reveal();
+    if (queryActive(workerGeneration, token) && !wantListen.current) setPhase("idle");
   }
 
   function openSheet() {
+    unlockVoice();
     openRef.current = true;
     setOpen(true);
-    if (!msgs.length) {
+    if (!msgsRef.current.length) {
       const hello = greeting();
       push({ role: "bro", text: hello });
       // Keep opening silent: a delayed greeting used to start after the rider tapped the mic.
@@ -474,118 +520,150 @@ export function RealBro() {
     setOpen(false);
     hushVoice();
     stopListening(false);
-    speakToken.current++;
-    queryGenerationRef.current++;
+    workerGenerationRef.current += 1;
+    activeQueryTokenRef.current += 1;
+    queryQueueRef.current = [];
+    workerActiveRef.current = false;
     queryAbortRef.current?.abort();
     queryAbortRef.current = null;
     transcribeAbortRef.current?.abort();
     transcribeAbortRef.current = null;
-    queuedRef.current = null;
-    busyRef.current = false;
     setBusy(false);
   }
 
-  function queryActive(token: number): boolean {
-    return aliveRef.current && openRef.current && queryGenerationRef.current === token;
-  }
-
-  async function answerRide(query: string, token: number, aiReply?: string) {
+  async function answerRide(
+    query: string,
+    workerGeneration: number,
+    token: number,
+    signal: AbortSignal,
+    aiReply?: string,
+  ) {
     const places = await loadPlaces();
-    if (!queryActive(token)) return;
+    if (!queryActive(workerGeneration, token)) return;
     const found = matchPlaces(places, query);
     if (found.length) {
       const reply = aiReply || rideReply(found[0].name, false);
-      push({ role: "bro", text: reply, cards: found.map(placeCard) });
-      say(reply);
+      await deliverReply(reply, found.map(placeCard), workerGeneration, token);
       return;
     }
-    const geo = await geocodePlace(query);
-    if (!queryActive(token)) return;
+    const geo = await geocodePlace(query, signal);
+    if (!queryActive(workerGeneration, token)) return;
     if (geo) {
       const reply = aiReply || rideReply(geo.name, false);
-      push({
-        role: "bro",
-        text: reply,
-        cards: [{ key: `geo-${geo.lat}`, name: geo.name, sub: "Point on the map", lat: geo.lat, lon: geo.lon }],
-      });
-      say(reply);
+      await deliverReply(
+        reply,
+        [{ key: `geo-${geo.lat}`, name: geo.name, sub: "Point on the map", lat: geo.lat, lon: geo.lon }],
+        workerGeneration,
+        token,
+      );
       return;
     }
     const reply = aiReply || notFoundReply(query, false);
-    push({ role: "bro", text: reply });
-    say(reply);
+    await deliverReply(reply, undefined, workerGeneration, token);
   }
 
-  async function answerCategory(type: PlaceType, token: number, country?: string, aiReply?: string) {
+  async function answerCategory(
+    type: PlaceType,
+    workerGeneration: number,
+    token: number,
+    country?: string,
+    aiReply?: string,
+  ) {
     const places = await loadPlaces();
-    if (!queryActive(token)) return;
+    if (!queryActive(workerGeneration, token)) return;
     const list = topByCategory(places, type, country);
     const reply = aiReply || categoryReply(list.length, type, country, false);
-    push({ role: "bro", text: reply, cards: list.map(placeCard) });
-    say(reply);
+    await deliverReply(reply, list.map(placeCard), workerGeneration, token);
+  }
+
+  async function processQuery(item: PendingQuery, workerGeneration: number) {
+    const token = ++activeQueryTokenRef.current;
+    const controller = new AbortController();
+    queryAbortRef.current = controller;
+    const deadline = window.setTimeout(
+      () => controller.abort(new DOMException("Real Bro request timed out", "TimeoutError")),
+      35_000,
+    );
+    try {
+      const intent = parseIntent(item.text);
+      if (intent.kind === "ride") {
+        setProviderState("local");
+        await answerRide(intent.query, workerGeneration, token, controller.signal);
+        return;
+      }
+      if (intent.kind === "category") {
+        setProviderState("local");
+        await answerCategory(intent.type, workerGeneration, token, intent.country);
+        return;
+      }
+
+      const history: BroChatTurn[] = msgsRef.current
+        .filter((message) => message.id < item.userMessageId)
+        .slice(-8)
+        .map((m) => ({ role: m.role === "bro" ? "assistant" : "user", content: m.text }));
+      const ai = await askRealBro(item.text, history, controller.signal);
+      if (!queryActive(workerGeneration, token)) return;
+      setProviderState(ai ? "online" : "offline");
+      if (ai?.intent === "ride" && ai.query) {
+        await answerRide(ai.query, workerGeneration, token, controller.signal, ai.reply);
+        return;
+      }
+      if (ai?.intent === "category" && ai.type) {
+        await answerCategory(ai.type, workerGeneration, token, ai.country, ai.reply);
+        return;
+      }
+      const reply = ai?.reply || localChatReply(item.text);
+      await deliverReply(reply, undefined, workerGeneration, token);
+    } catch {
+      if (!queryActive(workerGeneration, token)) return;
+      setProviderState("offline");
+      await deliverReply(localChatReply(item.text), undefined, workerGeneration, token);
+    } finally {
+      window.clearTimeout(deadline);
+      if (queryAbortRef.current === controller) queryAbortRef.current = null;
+    }
+  }
+
+  async function drainQueue() {
+    if (workerActiveRef.current) return;
+    const workerGeneration = workerGenerationRef.current;
+    workerActiveRef.current = true;
+    setBusy(true);
+    try {
+      while (
+        queryQueueRef.current.length &&
+        aliveRef.current &&
+        openRef.current &&
+        workerGenerationRef.current === workerGeneration
+      ) {
+        const item = queryQueueRef.current.shift();
+        if (item) await processQuery(item, workerGeneration);
+      }
+    } finally {
+      if (workerGenerationRef.current !== workerGeneration) return;
+      workerActiveRef.current = false;
+      setBusy(false);
+      if (queryQueueRef.current.length) void drainQueue();
+    }
   }
 
   async function handleQuery(raw: string) {
     const text = raw.trim();
-    if (!text) return;
-    if (busyRef.current) {
-      queuedRef.current = text;
-      return;
-    }
+    if (!text || !openRef.current) return;
     const now = Date.now();
     // Voice silence + send (or overlapping recognizers) used to fire the same line twice.
     if (text === lastSubmitRef.current.text && now - lastSubmitRef.current.at < 2200) return;
     lastSubmitRef.current = { text, at: now };
-    const token = ++queryGenerationRef.current;
-    const controller = new AbortController();
-    queryAbortRef.current?.abort();
-    queryAbortRef.current = controller;
-    busyRef.current = true;
-    setBusy(true);
-    hushVoice();
-    push({ role: "user", text });
-    try {
-      const intent = parseIntent(text);
-      if (intent.kind === "ride") {
-        await answerRide(intent.query, token);
-        return;
-      }
-      if (intent.kind === "category") {
-        await answerCategory(intent.type, token, intent.country);
-        return;
-      }
-
-      const history: BroChatTurn[] = msgs
-        .slice(-8)
-        .map((m) => ({ role: m.role === "bro" ? "assistant" : "user", content: m.text }));
-      const ai = await askRealBro(text, history, controller.signal);
-      if (!queryActive(token)) return;
-      setProviderState(ai ? "online" : "offline");
-      if (ai?.intent === "ride" && ai.query) {
-        await answerRide(ai.query, token, ai.reply);
-        return;
-      }
-      if (ai?.intent === "category" && ai.type) {
-        await answerCategory(ai.type, token, ai.country, ai.reply);
-        return;
-      }
-      const reply = ai?.reply || localChatReply(text);
-      push({ role: "bro", text: reply });
-      say(reply);
-    } finally {
-      if (queryAbortRef.current === controller) queryAbortRef.current = null;
-      if (!queryActive(token)) return;
-      busyRef.current = false;
-      setBusy(false);
-      const next = queuedRef.current;
-      queuedRef.current = null;
-      if (next) void handleQuery(next);
-    }
+    const userMessageId = push({ role: "user", text });
+    queryQueueRef.current.push({ text, userMessageId });
+    void drainQueue();
   }
   handleQueryRef.current = handleQuery;
 
   function handleSend() {
     const text = input;
+    if (!text.trim()) return;
+    unlockVoice();
     setInput("");
     void handleQuery(text);
   }
@@ -600,7 +678,7 @@ export function RealBro() {
     transcribeAbortRef.current?.abort();
     transcribeAbortRef.current = null;
     hushVoice();
-    speakToken.current++;
+    unlockVoice();
     heardRef.current = "";
     wantListen.current = true;
     startingRef.current = false;
@@ -624,6 +702,8 @@ export function RealBro() {
           ? "Thinking…"
           : providerState === "online"
             ? "Online"
+            : providerState === "local"
+              ? "Local search"
             : providerState === "offline"
               ? "Offline mode"
               : "Ready";
@@ -707,7 +787,12 @@ export function RealBro() {
                   </svg>
                 </button>
               )}
-              <button className="rb-send" data-testid="assistant-send" aria-label="Send" disabled={busy} onClick={handleSend}>
+              <button
+                className="rb-send"
+                data-testid="assistant-send"
+                aria-label="Send"
+                onClick={handleSend}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M4 12h14M13 5l7 7-7 7" />
                 </svg>

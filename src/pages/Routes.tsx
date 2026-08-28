@@ -18,8 +18,21 @@ export function Routes() {
   const [openList, setOpenList] = useState(false);
 
   useEffect(() => {
-    loadRoutes().then(setRows);
-    loadCountries().then(setFlags);
+    let active = true;
+    Promise.all([loadRoutes(), loadCountries()])
+      .then(([routes, countries]) => {
+        if (!active) return;
+        setRows(routes);
+        setFlags(countries);
+      })
+      .catch(() => {
+        if (!active) return;
+        setRows([]);
+        setFlags([]);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const countries = useMemo(
@@ -144,20 +157,51 @@ export function RouteDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const [route, setRoute] = useState<RideRoute | null>(null);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
-    loadRoutes().then((all) => setRoute(all.find((r) => r.id === id) ?? null));
+    let active = true;
+    setLoaded(false);
+    setRoute(null);
+    loadRoutes()
+      .then((all) => {
+        if (active) setRoute(all.find((item) => item.id === id) ?? null);
+      })
+      .catch(() => {
+        if (active) setRoute(null);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
   }, [id]);
 
-  if (!route) return <div className="empty">Loading…</div>;
+  const gpx = useMemo(() => (route ? buildGpx(route) : ""), [route]);
+  const generatedGpxUrl = useMemo(
+    () => (route && !route.gpxUrl ? URL.createObjectURL(new Blob([gpx], { type: "application/gpx+xml" })) : ""),
+    [gpx, route],
+  );
+  useEffect(
+    () => () => {
+      if (generatedGpxUrl) URL.revokeObjectURL(generatedGpxUrl);
+    },
+    [generatedGpxUrl],
+  );
+
+  if (!route) return <div className="empty">{loaded ? "Route not found." : "Loading…"}</div>;
   const start = route.points[0];
   const end = route.points[route.points.length - 1];
-  const gpx = buildGpx(route);
   const total = route.days.reduce((s, d) => s + d.distanceKm, 0);
 
-  function share() {
+  async function share() {
     const text = `${route!.title} — ${route!.subtitle}`;
-    if (navigator.share) navigator.share({ title: route!.title, text });
-    else navigator.clipboard.writeText(text);
+    try {
+      if (navigator.share) await navigator.share({ title: route!.title, text });
+      else await navigator.clipboard.writeText(text);
+    } catch {
+      // The user cancelled sharing or the platform rejected the request.
+    }
   }
 
   return (
@@ -165,7 +209,7 @@ export function RouteDetail() {
       <TopBar
         title="Route"
         right={
-          <button className="icon-btn" onClick={share} aria-label="Share">
+          <button className="icon-btn" onClick={() => void share()} aria-label="Share">
             <IconShare />
           </button>
         }
@@ -210,7 +254,7 @@ export function RouteDetail() {
           </button>
           <a
             className="btn white small"
-            href={route.gpxUrl ?? URL.createObjectURL(new Blob([gpx], { type: "application/gpx+xml" }))}
+            href={route.gpxUrl || generatedGpxUrl}
             download={`${route.id}.gpx`}
           >
             GPX

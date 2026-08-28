@@ -20,5 +20,12 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 30_000,
   },
-  projects: [{ name: "chromium", use: { ...devices["Pixel 7"] } }],
+  projects: [
+    { name: "chromium", use: { ...devices["Pixel 7"] } },
+    {
+      name: "webkit-iphone",
+      testMatch: /assistant-(tts|voice)\.spec\.ts/,
+      use: { ...devices["iPhone 13"] },
+    },
+  ],
 });

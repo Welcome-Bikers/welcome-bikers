@@ -10,22 +10,43 @@ export function Reviews() {
   const { id } = useParams();
   const nav = useNavigate();
   const [place, setPlace] = useState<Place | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [rows, setRows] = useState<Review[]>([]);
   const [rating, setRating] = useState(5);
   const [text, setText] = useState("");
 
   useEffect(() => {
-    if (!id) return;
-    loadPlaces().then((all) => setPlace(getPlace(all, id) ?? null));
-    Promise.all([loadReviews()]).then(([crm]) => {
-      const local = store.get().reviews.filter((r) => r.placeId === id);
-      const merged = new Map(crm.filter((r) => r.placeId === id).map((review) => [review.id, review]));
-      for (const review of local) merged.set(review.id, review);
-      setRows(Array.from(merged.values()).sort((a, b) => b.createdAt - a.createdAt));
-    });
+    let active = true;
+    setLoaded(false);
+    setPlace(null);
+    setRows([]);
+    if (!id) {
+      setLoaded(true);
+      return () => {
+        active = false;
+      };
+    }
+    Promise.all([loadPlaces(), loadReviews()])
+      .then(([places, crm]) => {
+        if (!active) return;
+        setPlace(getPlace(places, id) ?? null);
+        const local = store.get().reviews.filter((review) => review.placeId === id);
+        const merged = new Map(crm.filter((review) => review.placeId === id).map((review) => [review.id, review]));
+        for (const review of local) merged.set(review.id, review);
+        setRows(Array.from(merged.values()).sort((a, b) => b.createdAt - a.createdAt));
+      })
+      .catch(() => {
+        if (active) setPlace(null);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
   }, [id]);
 
-  if (!place) return <div className="empty">Loading…</div>;
+  if (!place) return <div className="empty">{loaded ? "Place not found." : "Loading…"}</div>;
 
   return (
     <div className="page">

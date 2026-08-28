@@ -1,5 +1,10 @@
 import type { NavStep } from "./osrm";
-import { hushNeuralVoice, speakBroNeural } from "./tts";
+import {
+  hushNeuralVoice,
+  speakBroNeural,
+  unlockNeuralVoice,
+  type SpeechEvents,
+} from "./tts";
 
 export type VoicePhase = "approach" | "now" | "arrived";
 
@@ -14,7 +19,7 @@ export function freshVoiceState(): VoiceState {
   return { stepI: -1, approach: false, now: false, arrived: false };
 }
 
-export function turnVerb(step: NavStep | undefined): string {
+function turnVerb(step: NavStep | undefined): string {
   if (!step) return "continue";
   if (step.type === "arrive") return "arrive";
   const m = (step.modifier || step.type || "").toLowerCase();
@@ -77,6 +82,7 @@ export function nextVoice(
 
 let cachedVoices: SpeechSynthesisVoice[] = [];
 let voicesHooked = false;
+let activeWebSpeechStop: (() => void) | null = null;
 
 function refreshVoices() {
   try {
@@ -110,7 +116,7 @@ const FEMALE =
   /\b(ava|aria|jenny|samantha|allison|joanna|emma|zira|susan|hazel|sonia|karen|moira|tessa|fiona|victoria|salli|ivy|kendra|kimberly|nicole|raveena|amy|linda|heera)\b/;
 
 /** Bass-leaning male English — Web Speech cannot do a real gangsta voice. */
-export const BRO_VOICE = { rate: 0.9, pitch: 0.78 };
+const BRO_VOICE = { rate: 0.9, pitch: 0.78 };
 
 function genderAdjust(name: string): number {
   if (FEMALE.test(name) || /\bfemale\b/.test(name)) return -36;
@@ -118,12 +124,18 @@ function genderAdjust(name: string): number {
   return 0;
 }
 
-export function voiceScore(voice: { name: string; lang: string; localService?: boolean }): number {
+function scoreVoice(
+  voice: { name: string; lang: string; localService?: boolean },
+  preferredLang: string,
+  englishRegional = false,
+): number {
   const lang = voice.lang.toLowerCase().replace("_", "-");
-  if (!lang.startsWith("en")) return -1;
+  const wanted = preferredLang.toLowerCase().replace("_", "-");
+  const language = wanted.split("-")[0];
+  if (!lang.startsWith(language)) return -1;
   const name = voice.name.toLowerCase();
   if (NOVELTY.some((bad) => name.includes(bad))) return -1;
-  let score = lang.startsWith("en-us") ? 40 : lang.startsWith("en-gb") ? 34 : 28;
+  let score = lang.startsWith(wanted) ? 40 : englishRegional && lang.startsWith("en-gb") ? 34 : 28;
   if (name.includes("natural")) score += 60;
   if (name.includes("neural")) score += 55;
   if (name.includes("premium") || name.includes("enhanced")) score += 42;
@@ -134,6 +146,10 @@ export function voiceScore(voice: { name: string; lang: string; localService?: b
   if (name.includes("compact")) score -= 40;
   if (voice.localService === false) score += 8;
   return score;
+}
+
+export function voiceScore(voice: { name: string; lang: string; localService?: boolean }): number {
+  return scoreVoice(voice, "en-us", true);
 }
 
 function pickVoice(): SpeechSynthesisVoice | null {
@@ -151,6 +167,8 @@ function pickVoice(): SpeechSynthesisVoice | null {
 }
 
 export function hushVoice() {
+  activeWebSpeechStop?.();
+  activeWebSpeechStop = null;
   hushNeuralVoice();
   try {
     const syn = window.speechSynthesis;
@@ -172,89 +190,93 @@ export function hushVoice() {
   }
 }
 
+/** Prime browser and neural audio directly from a user gesture (required by iOS). */
+export function unlockVoice() {
+  unlockNeuralVoice();
+  try {
+    warmVoices();
+    window.speechSynthesis?.resume();
+  } catch {
+    // A later Web Speech attempt can still succeed.
+  }
+}
+
 function qualityScoreFor(voice: { name: string; lang: string; localService?: boolean }, lang: string): number {
-  const vl = voice.lang.toLowerCase().replace("_", "-");
-  const want = lang.toLowerCase();
-  const base = want.split("-")[0];
-  if (!vl.startsWith(base)) return -1;
-  const name = voice.name.toLowerCase();
-  if (NOVELTY.some((bad) => name.includes(bad))) return -1;
-  let score = vl.startsWith(want) ? 40 : 28;
-  if (name.includes("natural")) score += 60;
-  if (name.includes("neural")) score += 55;
-  if (name.includes("premium") || name.includes("enhanced")) score += 42;
-  if (name.includes("siri")) score += 36;
-  if (name.includes("google")) score += 30;
-  if (name.includes("online")) score += 12;
-  score += genderAdjust(name);
-  if (name.includes("compact")) score -= 40;
-  if (voice.localService === false) score += 8;
-  return score;
+  return scoreVoice(voice, lang);
 }
 
 /**
  * Speak Real Bro lines. Prefers OpenRouter neural TTS (deep male / bass),
  * falls back to Web Speech when the API is unavailable.
- * Returns true when speech was started; onDone always fires once.
+ * Resolves after speech ends or cannot start. onStart tracks actual playback.
  */
-export function speakText(text: string, lang: string, onDone?: () => void): boolean {
-  if (!text || typeof window === "undefined") {
-    onDone?.();
-    return false;
-  }
-  // Stop any prior neural + Web Speech so fallback cannot overlap with a new line.
+export async function speakText(text: string, lang: string, events: SpeechEvents = {}): Promise<boolean> {
+  if (!text || typeof window === "undefined") return false;
   hushVoice();
-  // Fire-and-forget neural path; keep a sync boolean for callers that check start.
-  let started = true;
-  void speakBroNeural(text, onDone, (plain, done) => speakTextWeb(plain, lang, done)).then((ok) => {
-    if (!ok) started = false;
-  });
-  return started;
+  return speakBroNeural(text, events, (plain, fallbackEvents) =>
+    speakTextWeb(plain, lang, fallbackEvents));
 }
 
-function speakTextWeb(text: string, lang: string, onDone?: () => void): boolean {
-  if (!text || typeof window === "undefined" || !window.speechSynthesis) {
-    onDone?.();
-    return false;
-  }
-  try {
-    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang;
-    u.rate = BRO_VOICE.rate;
-    u.pitch = BRO_VOICE.pitch;
-    u.volume = 1;
-    if (!cachedVoices.length) warmVoices();
-    let best: SpeechSynthesisVoice | null = null;
-    let bestScore = -1;
-    for (const voice of cachedVoices) {
-      const score = qualityScoreFor(voice, lang);
-      if (score > bestScore) {
-        bestScore = score;
-        best = voice;
-      }
-    }
-    if (best) {
-      u.voice = best;
-      u.lang = best.lang || lang;
-    }
-    if (onDone) {
-      let done = false;
-      const finish = () => {
-        if (!done) {
-          done = true;
-          onDone();
+function speakTextWeb(text: string, lang: string, events: SpeechEvents): Promise<boolean> {
+  if (!text || typeof window === "undefined" || !window.speechSynthesis) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let started = false;
+    let startFallback = 0;
+    let watchdog = 0;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(startFallback);
+      window.clearTimeout(watchdog);
+      if (activeWebSpeechStop === finish) activeWebSpeechStop = null;
+      if (started) events.onEnd?.();
+      resolve(started);
+    };
+    const markStarted = () => {
+      if (settled || started) return;
+      started = true;
+      events.onStart?.();
+    };
+    activeWebSpeechStop = finish;
+
+    try {
+      if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang;
+      u.rate = BRO_VOICE.rate;
+      u.pitch = BRO_VOICE.pitch;
+      u.volume = 1;
+      if (!cachedVoices.length) warmVoices();
+      let best: SpeechSynthesisVoice | null = null;
+      let bestScore = -1;
+      for (const voice of cachedVoices) {
+        const score = qualityScoreFor(voice, lang);
+        if (score > bestScore) {
+          bestScore = score;
+          best = voice;
         }
-      };
+      }
+      if (best) {
+        u.voice = best;
+        u.lang = best.lang || lang;
+      }
+      u.onstart = markStarted;
       u.onend = finish;
       u.onerror = finish;
+      window.speechSynthesis.speak(u);
+      // Some iOS builds omit onstart but expose the speaking state.
+      startFallback = window.setTimeout(() => {
+        if (window.speechSynthesis.speaking) markStarted();
+      }, 1_200);
+      watchdog = window.setTimeout(
+        finish,
+        Math.min(45_000, Math.max(8_000, 2_500 + text.length * 90)),
+      );
+    } catch {
+      finish();
     }
-    window.speechSynthesis.speak(u);
-    return true;
-  } catch {
-    onDone?.();
-    return false;
-  }
+  });
 }
 
 export function speakLine(text: string) {

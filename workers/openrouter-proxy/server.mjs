@@ -90,7 +90,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const forwarded = TRUST_PROXY ? String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() : "";
+  const forwarded = TRUST_PROXY
+    ? String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || "").split(",")[0].trim()
+    : "";
   const client = forwarded || req.socket.remoteAddress || "unknown";
   const rate = checkRateLimit(`${client}:${path}`, RATE_LIMIT);
   if (!rate.allowed) {

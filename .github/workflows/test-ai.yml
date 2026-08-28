@@ -56,21 +56,21 @@ jobs:
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
           VITE_OPENROUTER_PROXY_URL: http://127.0.0.1:8787
         run: npm run build
-      - name: Install Playwright Chromium
+      - name: Install Playwright browsers
         if: steps.config.outputs.enabled == 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
       - name: Unit + mocked assistant suite
         if: steps.config.outputs.enabled == 'true'
         env:
           VITE_OPENROUTER_PROXY_URL: http://127.0.0.1:8787
-        run: npx playwright test e2e/assistant-brain.spec.ts e2e/assistant.spec.ts e2e/assistant-ai.spec.ts e2e/assistant-tts.spec.ts --reporter=list
+        run: npx playwright test e2e/assistant-brain.spec.ts e2e/assistant.spec.ts e2e/assistant-ai.spec.ts e2e/assistant-tts.spec.ts e2e/assistant-voice.spec.ts --reporter=list
       - name: Live OpenRouter Real Bro via proxy
         if: steps.config.outputs.enabled == 'true'
         env:
           LIVE_OPENROUTER: "1"
           VITE_OPENROUTER_PROXY_URL: http://127.0.0.1:8787
         run: npx playwright test e2e/assistant-live.spec.ts --reporter=list
-      - name: Probe neural TTS from GitHub
+      - name: Probe live TTS to STT voice roundtrip
         if: steps.config.outputs.enabled == 'true'
         env:
           VITE_OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}

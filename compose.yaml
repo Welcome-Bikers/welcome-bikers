@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile.proxy
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
       PROXY_RATE_LIMIT: ${PROXY_RATE_LIMIT:-40}
       UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:-45000}

@@ -31,12 +31,26 @@ export function CategoryList() {
   const [limit, setLimit] = useState(12);
 
   useEffect(() => {
-    loadPlaces().then(setPlaces);
-    loadCountries().then(setFlags);
+    let active = true;
+    Promise.all([loadPlaces(), loadCountries()])
+      .then(([loadedPlaces, countries]) => {
+        if (!active) return;
+        setPlaces(loadedPlaces);
+        setFlags(countries);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPlaces([]);
+        setFlags([]);
+      });
     void readLocation().then((fix) => {
+      if (!active) return;
       if (fix) setHere({ lat: fix.lat, lon: fix.lon });
       else setLocationUnavailable(true);
     });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const type = meta?.type as PlaceType | undefined;

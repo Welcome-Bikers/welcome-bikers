@@ -20,7 +20,7 @@ export function Login() {
           <IconBack />
         </button>
         <div className="topbar-mid">
-          <h1>Registration</h1>
+          <h1>Sign in</h1>
         </div>
         <Link className="icon-btn" to="/account" aria-label="Account">
           <IconUser />

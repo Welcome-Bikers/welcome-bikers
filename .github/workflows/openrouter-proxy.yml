@@ -9,7 +9,7 @@ on:
     - cron: "0 */5 * * *"
 
 concurrency:
-  group: openrouter-proxy-tunnel
+  group: openrouter-proxy
   cancel-in-progress: true
 
 jobs:
@@ -43,6 +43,7 @@ jobs:
         if: steps.config.outputs.enabled == 'true'
         env:
           PORT: "8787"
+          TRUST_PROXY: "true"
         run: |
           set -euo pipefail
           nohup node workers/openrouter-proxy/server.mjs > /tmp/proxy.log 2>&1 &
@@ -66,6 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           /tmp/cloudflared tunnel --url http://127.0.0.1:8787 > /tmp/tunnel.log 2>&1 &
+          echo "$!" > /tmp/tunnel.pid
           PROXY_URL=""
           for i in $(seq 1 90); do
             PROXY_URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/tunnel.log | head -n1 || true)
@@ -98,7 +100,19 @@ jobs:
         if: steps.config.outputs.enabled == 'true'
         run: |
           echo "Proxy up — holding runner ($(cat /tmp/proxy-url.txt))"
+          public_failures=0
           while true; do
+            kill -0 "$(cat /tmp/tunnel.pid)" || { echo "tunnel died"; exit 1; }
             curl -fsS "http://127.0.0.1:8787/health" >/dev/null || { echo "proxy died"; exit 1; }
+            if curl --max-time 15 -fsS "$(cat /tmp/proxy-url.txt)/health" >/dev/null; then
+              public_failures=0
+            else
+              public_failures=$((public_failures + 1))
+              echo "public tunnel health check failed (${public_failures}/3)"
+              if [ "$public_failures" -ge 3 ]; then
+                echo "public tunnel is unavailable"
+                exit 1
+              fi
+            fi
             sleep 60
           done

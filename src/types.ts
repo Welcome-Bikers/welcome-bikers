@@ -48,9 +48,9 @@ export type Place = {
   createdBy?: string;
 };
 
-export type RouteStop = { name: string; lat: number; lon: number };
+type RouteStop = { name: string; lat: number; lon: number };
 
-export type RouteDay = {
+type RouteDay = {
   title: string;
   distanceKm: number;
   description: string;

@@ -1,12 +1,8 @@
 import { HOME_ZOOM, type WbMap, type WbMapOptions } from "./wbmap-types";
 
 export {
-  HOME,
-  HOME_ZOOM,
   NAV_TILT,
-  NAV_ZOOM,
   type MapKind,
-  type WbCamera,
   type WbMap,
 } from "./wbmap-types";
 

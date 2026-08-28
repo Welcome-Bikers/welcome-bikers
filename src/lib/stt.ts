@@ -1,5 +1,6 @@
 /** Mobile STT: MediaRecorder + Whisper. Mobile Web Speech is not reliable enough. */
 
+import { fetchTextResponse } from "./net";
 import { resolveProxyBase, transcribeUrl } from "./orProxy";
 
 const STT_MODEL = "openai/whisper-1";
@@ -92,37 +93,37 @@ export async function transcribeAudioBlob(
   if (!blob.size) return null;
   const format = formatFromBlob(blob, formatHint);
   const data = await blobToBase64(blob);
+  const deadline = Date.now() + 40_000;
   for (let attempt = 0; attempt < 2; attempt++) {
-    if (signal?.aborted) return null;
-    const base = await resolveProxyBase(attempt > 0);
-    if (!base) continue;
-    const controller = new AbortController();
-    const onAbort = () => controller.abort(signal?.reason);
-    signal?.addEventListener("abort", onAbort, { once: true });
-    const timer = window.setTimeout(() => controller.abort(), 45_000);
+    if (signal?.aborted || Date.now() >= deadline) return null;
+    let base = "";
     try {
-      const res = await fetch(transcribeUrl(base), {
+      base = await resolveProxyBase(attempt > 0, signal);
+    } catch {
+      if (signal?.aborted) return null;
+      continue;
+    }
+    if (!base) continue;
+    try {
+      const { response, text: bodyText } = await fetchTextResponse(transcribeUrl(base), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
+        signal,
         body: JSON.stringify({
           model: STT_MODEL,
           // No language hint: riders can speak in their own language.
           input_audio: { data, format },
         }),
-      });
-      if (res.ok) {
-        const json = (await res.json()) as { text?: string };
+      }, Math.max(1, Math.min(25_000, deadline - Date.now())));
+      if (response.ok) {
+        const json = JSON.parse(bodyText) as { text?: string };
         const text = String(json.text || "").trim();
         return text || null;
       }
-      if (res.status < 500 && res.status !== 408 && res.status !== 429) return null;
+      if (response.status < 500 && response.status !== 408 && response.status !== 429) return null;
     } catch {
       if (signal?.aborted) return null;
       /* Refresh an expired tunnel URL and retry once. */
-    } finally {
-      window.clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
     }
   }
   return null;

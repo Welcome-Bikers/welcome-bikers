@@ -9,7 +9,7 @@ export type RawGpsFix = {
   timestamp: number;
 };
 
-export type FilteredGpsFix = RawGpsFix & {
+type FilteredGpsFix = RawGpsFix & {
   heading: number | null;
   speed: number | null;
 };

@@ -36,7 +36,7 @@ function fromNative(position: Position): GeoFix {
   };
 }
 
-export async function ensureLocationPermission(): Promise<boolean> {
+async function ensureLocationPermission(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return Boolean(navigator.geolocation);
   const current = await Geolocation.checkPermissions();
   if (current.location === "granted" || current.coarseLocation === "granted") return true;

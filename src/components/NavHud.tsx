@@ -42,7 +42,7 @@ export function displayedManeuverKind(step?: NavStep, arrived = false): Maneuver
   return arrived ? "arrive" : maneuverKind(step);
 }
 
-export function NavManeuverIcon({
+function NavManeuverIcon({
   step,
   compact = false,
   arrived = false,

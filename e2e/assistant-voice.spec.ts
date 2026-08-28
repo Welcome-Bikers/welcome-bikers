@@ -118,8 +118,11 @@ async function installAudioPlaySpy(page: Page) {
     Object.defineProperty(HTMLMediaElement.prototype, "play", {
       configurable: true,
       value() {
-        const w = window as unknown as { __audioPlayCount?: number };
-        w.__audioPlayCount = (w.__audioPlayCount || 0) + 1;
+        const src = String((this as HTMLMediaElement).src || "");
+        if (!src.startsWith("data:audio/wav")) {
+          const w = window as unknown as { __audioPlayCount?: number };
+          w.__audioPlayCount = (w.__audioPlayCount || 0) + 1;
+        }
         return Promise.resolve();
       },
     });
@@ -141,6 +144,40 @@ test.describe("STT helpers", () => {
 });
 
 test.describe("Real Bro mobile voice (MediaRecorder path)", () => {
+  test("keeps the iOS audio unlock alive while recording starts", async ({ page }) => {
+    await installMobileRecordMocks(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(HTMLMediaElement.prototype, "play", {
+        configurable: true,
+        value() {
+          const media = this as HTMLMediaElement;
+          if (!media.src.startsWith("data:audio/wav")) return Promise.resolve();
+          const state = window as unknown as { __silentPlayCalls?: number; __unlockSurvived?: boolean };
+          const call = (state.__silentPlayCalls || 0) + 1;
+          state.__silentPlayCalls = call;
+          return new Promise<void>((resolve) => {
+            window.setTimeout(() => {
+              if (call === 2) state.__unlockSurvived = media.src.startsWith("data:audio/wav");
+              resolve();
+            }, call === 1 ? 1_000 : 20);
+          });
+        },
+      });
+    });
+
+    await page.goto("/#/");
+    await page.getByTestId("assistant-row").tap();
+    await page.getByLabel("Voice input").tap();
+
+    await expect.poll(() =>
+      page.evaluate(() => (window as unknown as { __silentPlayCalls?: number }).__silentPlayCalls || 0),
+    ).toBe(2);
+    await expect.poll(() =>
+      page.evaluate(() => Boolean((window as unknown as { __unlockSurvived?: boolean }).__unlockSurvived)),
+    ).toBe(true);
+    await page.getByLabel("Close assistant").tap();
+  });
+
   test("uses MediaRecorder even when webkitSpeechRecognition exists", async ({ page }) => {
     await installMobileRecordMocks(page);
     await installSpeechRecognitionSpy(page);

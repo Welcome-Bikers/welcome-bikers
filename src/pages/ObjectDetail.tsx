@@ -25,32 +25,49 @@ export function ObjectDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const [place, setPlace] = useState<Place | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [fav, setFav] = useState(false);
-  const [report, setReport] = useState(false);
   const [from, setFrom] = useState(() => dateFromToday(1));
   const [to, setTo] = useState(() => dateFromToday(2));
   const [booked, setBooked] = useState(false);
 
   useEffect(() => {
-    loadPlaces().then((all) => {
-      const p = getPlace(all, id);
-      setPlace(p ?? null);
-      setFav(!!id && store.get().favorites.includes(id));
-    });
+    let active = true;
+    setLoaded(false);
+    setPlace(null);
+    loadPlaces()
+      .then((all) => {
+        if (!active) return;
+        setPlace(getPlace(all, id) ?? null);
+        setFav(!!id && store.get().favorites.includes(id));
+      })
+      .catch(() => {
+        if (active) setPlace(null);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
   }, [id]);
 
-  if (!place) return <div className="empty">Loading…</div>;
+  if (!place) return <div className="empty">{loaded ? "Place not found." : "Loading…"}</div>;
   const photos = photosFor(place);
   const canRoute = validCoords(place.lat, place.lon);
   const hotel = place.types.includes("hotels");
   const datesValid = validDateRange(from, to);
   const maps = `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lon}`;
 
-  function share() {
+  async function share() {
     const text = `${place!.name} — ${fullAddress(place!)}\n${place!.lat},${place!.lon}`;
-    if (navigator.share) navigator.share({ title: place!.name, text, url: location.href });
-    else navigator.clipboard.writeText(`${text}\n${location.href}`);
+    try {
+      if (navigator.share) await navigator.share({ title: place!.name, text, url: location.href });
+      else await navigator.clipboard.writeText(`${text}\n${location.href}`);
+    } catch {
+      // The user cancelled sharing or the platform rejected the request.
+    }
   }
 
   function requestBook() {
@@ -79,7 +96,7 @@ export function ObjectDetail() {
       <div className="section">
         <div className="title-row">
           <div className="place-name">{place.name}</div>
-          <button className="icon-btn" onClick={share} aria-label="Share">
+          <button className="icon-btn" onClick={() => void share()} aria-label="Share">
             <IconShare />
           </button>
         </div>
@@ -170,9 +187,6 @@ export function ObjectDetail() {
           >
             {fav ? "Saved" : "Save"}
           </button>
-          <button className="btn ghost small" onClick={() => setReport(true)}>
-            Report
-          </button>
         </div>
         <PlaceMiniMap lat={place.lat} lon={place.lon} />
       </div>
@@ -201,25 +215,6 @@ export function ObjectDetail() {
             <a className="btn ghost" href={wazeUrl(place.lat, place.lon)} target="_blank" rel="noreferrer">
               Waze
             </a>
-          </div>
-        </>
-      )}
-      {report && (
-        <>
-          <div className="backdrop" onClick={() => setReport(false)} />
-          <div className="sheet">
-            <h3>Report a problem</h3>
-            <p className="muted">Tell us if the pin, hours or details are wrong.</p>
-            <textarea placeholder="What is wrong?" />
-            <button
-              className="btn blue"
-              onClick={() => {
-                setReport(false);
-                nav(-1);
-              }}
-            >
-              Send report
-            </button>
           </div>
         </>
       )}

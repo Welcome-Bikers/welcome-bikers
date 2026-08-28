@@ -59,6 +59,7 @@ npm run typecheck    # strict TypeScript check
 npm run test:proxy   # proxy policy tests
 npm run test:e2e     # Playwright suite against an existing build
 npm test             # proxy tests, production build, and Playwright
+npm run android:icons # regenerate Android icons and splash assets
 npm run android:sync # build and copy web assets into Android
 npm run android:apk  # build a debug APK
 ```

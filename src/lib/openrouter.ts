@@ -1,6 +1,6 @@
 import type { PlaceType } from "../types";
 import { PLACE_TYPES } from "./categories";
-import { fetchWithTimeout } from "./net";
+import { fetchTextResponse } from "./net";
 import { chatUrl, resolveProxyBase } from "./orProxy";
 
 /** Fast + smart default; fallbacks listed in the request body. */
@@ -28,11 +28,6 @@ Otherwise intent "chat". Still answer smartly; if unsure how to help, nudge them
 Reply with JSON only, no markdown:
 {"reply":"...","intent":"chat"|"ride"|"category","query":"...","type":"...","country":"..."}
 Omit unused fields.`;
-
-export function hasOpenRouter(): boolean {
-  // Calls always go through the CORS proxy (env URL or runtime discovery).
-  return true;
-}
 
 function extractJson(raw: string): unknown {
   const text = raw.trim();
@@ -74,39 +69,52 @@ export async function askRealBro(
   signal?: AbortSignal,
 ): Promise<BroAiResult | null> {
   if (!userText.trim()) return null;
-  const base = await resolveProxyBase();
-  if (!base) return null;
-
   const messages: { role: string; content: string }[] = [
     { role: "system", content: SYSTEM },
     ...history.slice(-8).map((t) => ({ role: t.role, content: t.content })),
     { role: "user", content: userText.trim() },
   ];
-  try {
-    const res = await fetchWithTimeout(chatUrl(base), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal,
-      body: JSON.stringify({
-        model: MODEL,
-        models: FALLBACK_MODELS,
-        temperature: 0.55,
-        max_tokens: 220,
-        messages,
-      }),
-    }, 20_000);
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      choices?: { message?: { content?: string | null } }[];
-      error?: { message?: string };
-    };
-    if (data.error) return null;
-    const content = String(data.choices?.[0]?.message?.content ?? "").trim();
-    if (!content) return null;
-    const parsed = extractJson(content);
-    if (parsed) return normalizeResult(parsed, content);
-    return { reply: content.replace(/^```(?:json)?|```$/g, "").trim(), intent: "chat" };
-  } catch {
-    return null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (signal?.aborted) return null;
+    let base = "";
+    try {
+      base = await resolveProxyBase(attempt > 0, signal);
+    } catch {
+      if (signal?.aborted) return null;
+      continue;
+    }
+    if (!base) continue;
+    try {
+      const { response, text } = await fetchTextResponse(chatUrl(base), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal,
+        body: JSON.stringify({
+          model: MODEL,
+          models: FALLBACK_MODELS,
+          temperature: 0.55,
+          max_tokens: 220,
+          messages,
+        }),
+      }, 25_000);
+      if (!response.ok) {
+        if (response.status >= 500) continue;
+        return null;
+      }
+      const data = JSON.parse(text) as {
+        choices?: { message?: { content?: string | null } }[];
+        error?: { message?: string };
+      };
+      if (data.error) return null;
+      const content = String(data.choices?.[0]?.message?.content ?? "").trim();
+      if (!content) continue;
+      const parsed = extractJson(content);
+      if (parsed) return normalizeResult(parsed, content);
+      return { reply: content.replace(/^```(?:json)?|```$/g, "").trim(), intent: "chat" };
+    } catch {
+      if (signal?.aborted) return null;
+    }
   }
+  return null;
 }

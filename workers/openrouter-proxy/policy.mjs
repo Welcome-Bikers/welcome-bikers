@@ -33,7 +33,7 @@ const SPEECH_MODELS = new Set([
   "deepgram/aura-2",
   "google/gemini-3.1-flash-tts-preview",
 ]);
-const AUDIO_FORMATS = new Set(["webm", "m4a", "aac", "ogg"]);
+const AUDIO_FORMATS = new Set(["webm", "m4a", "aac", "ogg", "mp3"]);
 const rateBuckets = new Map();
 const MAX_RATE_BUCKETS = 10_000;
 

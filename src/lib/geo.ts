@@ -16,34 +16,8 @@ export function haversineKm(
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(q)));
 }
 
-export function formatDistance(km: number): string {
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  if (km < 10) return `${km.toFixed(1)} km`;
-  return `${Math.round(km)} km`;
-}
-
 export function googleRouteUrl(lat: number, lon: number): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
-}
-
-export function googleMultiRouteUrl(points: { lat: number; lon: number }[]): string {
-  const pts = points.filter((p) => validCoords(p.lat, p.lon));
-  if (!pts.length) return "https://www.google.com/maps";
-  if (pts.length === 1) return googleRouteUrl(pts[0].lat, pts[0].lon);
-  const origin = `${pts[0].lat},${pts[0].lon}`;
-  const dest = `${pts[pts.length - 1].lat},${pts[pts.length - 1].lon}`;
-  const wps = pts
-    .slice(1, -1)
-    .map((p) => `${p.lat},${p.lon}`)
-    .join("|");
-  const q = new URLSearchParams({
-    api: "1",
-    origin,
-    destination: dest,
-    travelmode: "driving",
-  });
-  if (wps) q.set("waypoints", wps);
-  return `https://www.google.com/maps/dir/?${q.toString()}`;
 }
 
 export function appleMapsUrl(lat: number, lon: number): string {
@@ -74,22 +48,6 @@ export function bearingDeg(
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   return (Math.atan2(y, x) * 180) / Math.PI;
-}
-
-export function nearestIndex(
-  pts: [number, number][],
-  here: { lat: number; lon: number },
-): number {
-  let bestI = 0;
-  let best = Infinity;
-  for (let i = 0; i < pts.length; i++) {
-    const km = haversineKm(here, { lat: pts[i][0], lon: pts[i][1] });
-    if (km < best) {
-      best = km;
-      bestI = i;
-    }
-  }
-  return bestI;
 }
 
 export function closestOnPolyline(

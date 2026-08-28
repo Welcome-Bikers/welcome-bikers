@@ -54,6 +54,16 @@ test("speech and transcription reject unsupported payloads", () => {
   );
 });
 
+test("transcription accepts an mp3 voice roundtrip sample", () => {
+  const body = decode(
+    sanitizeBody("/transcribe", encode({
+      model: "openai/whisper-1",
+      input_audio: { data: "ZmFrZS1hdWRpbw==", format: "mp3" },
+    })),
+  );
+  assert.equal(body.input_audio.format, "mp3");
+});
+
 test("rate limiter blocks requests above the configured window", () => {
   const key = `test-${Date.now()}-${Math.random()}`;
   assert.equal(checkRateLimit(key, 2, 60_000, 1).allowed, true);

@@ -46,6 +46,13 @@ AMENITY_FLAGS = [
     ("gifts", "Gift for bikers"),
 ]
 
+COUNTRY_OVERRIDES = {
+    "India": {
+        "iso": "in",
+        "flag": "https://flagicons.lipis.dev/flags/4x3/in.svg",
+    },
+}
+
 DAY_RE = re.compile(
     r"<details>\s*<summary>\s*<strong>(.*?)</strong>\s*</summary>(.*?)</details>",
     re.I | re.S,
@@ -163,6 +170,19 @@ def clean_country(value: str, known: set[str]) -> str:
     return re.split(r"[\n\r]", text)[0][:48]
 
 
+def country_snapshot(row: dict) -> dict:
+    title = row.get("tilte") or row.get("title")
+    record = {
+        "id": row.get("id"),
+        "title": title,
+        "iso": row.get("iso"),
+        "flag": row.get("flag"),
+        "filterFlag": abs_url(row.get("filters_flag")),
+    }
+    record.update(COUNTRY_OVERRIDES.get(title, {}))
+    return record
+
+
 def parse_route_days(html: str, dest: dict) -> tuple[list[dict], list[dict]]:
     waypoints = dest.get("waypoints") or []
     by_name = {w.get("name"): w for w in waypoints if isinstance(w, dict)}
@@ -226,17 +246,7 @@ def main() -> None:
     known = {str(c.get("tilte") or c.get("title") or "").strip() for c in countries_raw}
     known.discard("")
 
-    countries = [
-        {
-            "id": c.get("id"),
-            "title": c.get("tilte") or c.get("title"),
-            "iso": c.get("iso"),
-            "flag": c.get("flag"),
-            "filterFlag": abs_url(c.get("filters_flag")),
-        }
-        for c in countries_raw
-        if c.get("tilte") or c.get("title")
-    ]
+    countries = [country_snapshot(c) for c in countries_raw if c.get("tilte") or c.get("title")]
 
     partners = load_backup("backup_all_partners")
     places = []

@@ -12,6 +12,7 @@ export function HotelBook() {
   const { id } = useParams();
   const nav = useNavigate();
   const [place, setPlace] = useState<Place | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [rooms, setRooms] = useState<HotelRoom[]>([]);
   const [picked, setPicked] = useState<string>("");
   const [from, setFrom] = useState(() => dateFromToday(1));
@@ -19,20 +20,37 @@ export function HotelBook() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    loadPlaces().then((all) => setPlace(getPlace(all, id) ?? null));
-    loadHotelRooms().then((all) => setRooms(all.filter((r) => r.hotelId === id)));
+    let active = true;
+    setLoaded(false);
+    setPlace(null);
+    setRooms([]);
+    Promise.all([loadPlaces(), loadHotelRooms()])
+      .then(([places, allRooms]) => {
+        if (!active) return;
+        setPlace(getPlace(places, id) ?? null);
+        setRooms(allRooms.filter((room) => room.hotelId === id));
+      })
+      .catch(() => {
+        if (active) setPlace(null);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   const room = useMemo(() => rooms.find((r) => r.id === picked) ?? rooms[0], [rooms, picked]);
   const datesValid = validDateRange(from, to);
 
-  if (!place) return <div className="empty">Loading…</div>;
+  if (!place) return <div className="empty">{loaded ? "Hotel not found." : "Loading…"}</div>;
 
   return (
     <div className="page">
       <TopBar title="Hotel" />
       <div className="section">
-            <h3>Services provided</h3>
+        <h3>Services provided</h3>
         {(place.amenities ?? []).map((a) => (
           <div className="amenity" key={a}>
             <AmenityIcon name={a} />

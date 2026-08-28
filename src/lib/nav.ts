@@ -3,9 +3,9 @@ import { navLookAheadMeters } from "./nav-camera";
 import type { DriveRoute } from "./osrm";
 
 export const MIN_NAV_METERS = 80;
-export const OFF_ROUTE_M = 80;
-export const REROUTE_HOLD_MS = 3200;
-export const REROUTE_COOLDOWN_MS = 12_000;
+const OFF_ROUTE_M = 80;
+const REROUTE_HOLD_MS = 3200;
+const REROUTE_COOLDOWN_MS = 12_000;
 
 export type RerouteState = {
   offSince: number;
@@ -16,7 +16,7 @@ export function freshRerouteState(): RerouteState {
   return { offSince: 0, lastReroute: 0 };
 }
 
-export function routeDeviationThreshold(accuracyM: number): number {
+function routeDeviationThreshold(accuracyM: number): number {
   return Math.max(OFF_ROUTE_M, Math.min(180, Math.max(0, accuracyM) * 2));
 }
 

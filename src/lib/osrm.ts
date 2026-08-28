@@ -1,5 +1,6 @@
 import {
   DEFAULT_ROUTING_OPTIONS,
+  withArrivalStep,
   type DriveRoute,
   type LatLon,
   type ManeuverPreview,
@@ -141,7 +142,7 @@ async function fetchOsrm(
           geometry: line.map(([lon, lat]) => [lat, lon]),
           distance: route.distance,
           duration: route.duration,
-          steps: stepsFromOsrm(route, points[0]),
+          steps: withArrivalStep(stepsFromOsrm(route, points[0]), points[points.length - 1]),
           limitations: [
             ...(opts.profile !== "fastest" ? ["Selected route profile is unavailable with the OSRM fallback"] : []),
             ...(!opts.allowTolls ? ["Toll avoidance is unavailable with the OSRM fallback"] : []),
@@ -213,14 +214,14 @@ async function fetchValhalla(
       geometry,
       distance,
       duration,
-      steps,
+      steps: withArrivalStep(steps, points[points.length - 1]),
     }];
   } catch {
     return [];
   }
 }
 
-export async function osrmRoutes(
+async function osrmRoutes(
   points: LatLon[],
   options?: Partial<RoutingOptions>,
 ): Promise<DriveRoute[]> {
@@ -237,13 +238,6 @@ export async function osrmRoutes(
     if (routes.length) return routes;
   }
   return fetchValhalla(points, opts);
-}
-
-export async function osrmRoute(
-  points: LatLon[],
-  options?: Partial<RoutingOptions>,
-): Promise<DriveRoute | null> {
-  return (await osrmRoutes(points, { ...options, alternatives: false }))[0] || null;
 }
 
 export async function planRoutes(
@@ -276,12 +270,6 @@ export async function planRoute(
   return (await planRoutes(points, { ...options, alternatives: false }))[0] || null;
 }
 
-export async function osrmDrive(points: LatLon[]): Promise<[number, number][]> {
-  const r = await osrmRoute(points);
-  if (r?.geometry.length) return r.geometry;
-  return points.map((p) => [p.lat, p.lon]);
-}
-
 export function formatDriveTime(sec: number): string {
   const s = Math.max(0, Math.round(sec));
   const d = Math.floor(s / 86400);
@@ -306,7 +294,7 @@ export function formatMeters(meters: number): string {
   return `${km.toFixed(2)} km`;
 }
 
-export function stepInstruction(step: NavStep | undefined): string {
+function stepInstruction(step: NavStep | undefined): string {
   if (!step) return "Follow the route";
   if (step.type === "arrive") return "Arrive at destination";
   const name = step.name?.trim() || "";
@@ -357,17 +345,4 @@ export function maneuverPreviews(
     index += 1;
   }
   return list;
-}
-
-export function stepToward(step: NavStep | undefined): string {
-  if (!step) return "toward destination";
-  if (step.type === "arrive") return "Arrive";
-  const name = step.name?.trim();
-  return name ? `toward ${name}` : "toward destination";
-}
-
-export function stepThen(step: NavStep | undefined): { label: string; turn: string } | null {
-  if (!step || step.type === "arrive") return null;
-  const turn = step.modifier || step.type || "right";
-  return { label: "Then", turn };
 }

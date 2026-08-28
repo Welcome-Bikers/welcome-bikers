@@ -152,10 +152,3 @@ export async function googleRoutes(
     }
   }
 }
-
-export async function googleRoute(
-  points: LatLon[],
-  options?: Partial<RoutingOptions>,
-): Promise<DriveRoute | null> {
-  return (await googleRoutes(points, { ...options, alternatives: false }))[0] || null;
-}

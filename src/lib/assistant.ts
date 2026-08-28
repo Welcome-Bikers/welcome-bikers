@@ -1,13 +1,10 @@
 import type { Place, PlaceType } from "../types";
+import { fetchTextResponse } from "./net";
 
 export type AssistantIntent =
   | { kind: "ride"; query: string }
   | { kind: "category"; type: PlaceType; country?: string }
   | { kind: "unknown" };
-
-export function isRu(text: string): boolean {
-  return /[а-яё]/i.test(text);
-}
 
 function norm(s: string): string {
   return s
@@ -191,7 +188,7 @@ export function notFoundReply(query: string, ru: boolean): string {
     : `No "${query}" in my base or on the map. Ghost town or you mumbled it. Try another name, bro.`;
 }
 
-export function unknownReply(ru: boolean): string {
+function unknownReply(ru: boolean): string {
   return ru
     ? "Бро, я не погода и не терапевт. Я Real Bro. Скажи «поехали в Подгорицу» — построю маршрут. Или «какие бары есть в Черногории» — кину карточки."
     : 'Easy, bro. I am Real Bro, not your weather app. Say "ride to Podgorica" to build a route, or "what bars are in Montenegro" and I drop the cards.';
@@ -246,14 +243,15 @@ export function categoryReply(count: number, type: PlaceType, country: string | 
 export type GeoHit = { lat: number; lon: number; name: string };
 
 /** Single Nominatim lookup used when the places base has no match. */
-export async function geocodePlace(query: string): Promise<GeoHit | null> {
+export async function geocodePlace(query: string, signal?: AbortSignal): Promise<GeoHit | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&accept-language=en`;
-    const res = await fetch(url, {
+    const { response, text } = await fetchTextResponse(url, {
       headers: { Accept: "application/json", "Accept-Language": "en" },
-    });
-    if (!res.ok) return null;
-    const rows = (await res.json()) as { lat: string; lon: string; display_name?: string }[];
+      signal,
+    }, 10_000);
+    if (!response.ok) return null;
+    const rows = JSON.parse(text) as { lat: string; lon: string; display_name?: string }[];
     const hit = rows?.[0];
     if (!hit) return null;
     const lat = Number.parseFloat(hit.lat);

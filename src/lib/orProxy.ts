@@ -1,40 +1,50 @@
+import { fetchTextResponse } from "./net";
+
 /** Resolve CORS-friendly OpenRouter proxy base (no trailing slash). Key stays on the proxy. */
 
 const viteEnv = import.meta.env ?? {};
 const DEFAULT_DISCOVERY_URLS = [
-  "or-proxy.json",
   "https://raw.githubusercontent.com/Welcome-Bikers/welcome-bikers/proxy-url/public/or-proxy.json",
+  "or-proxy.json",
 ];
 const configuredDiscovery = String(viteEnv.VITE_OPENROUTER_DISCOVERY_URL || "")
   .split(",")
   .map((url) => url.trim())
   .filter(Boolean);
-const DISCOVERY_URLS = configuredDiscovery.length ? configuredDiscovery : DEFAULT_DISCOVERY_URLS;
+const DISCOVERY_URLS = (configuredDiscovery.length ? configuredDiscovery : DEFAULT_DISCOVERY_URLS)
+  .filter((url, index, all) => all.indexOf(url) === index);
 
-let resolved: string | null | undefined;
-let resolving: Promise<string> | null = null;
+const HEALTH_CACHE_MS = 30_000;
+const FAILURE_CACHE_MS = 8_000;
+let resolved: string | undefined;
+let resolvedAt = 0;
+let unavailableUntil = 0;
+let generation = 0;
+let resolving: { generation: number; force: boolean; promise: Promise<string> } | null = null;
+const unhealthyUntil = new Map<string, number>();
 
 function normalizeBase(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
-export function proxyBaseFromEnv(): string {
+function proxyBaseFromEnv(): string {
   return normalizeBase(String(viteEnv.VITE_OPENROUTER_PROXY_URL || ""));
 }
 
-/** True when a proxy URL is baked in at build time (preferred). */
-export function hasProxyEnv(): boolean {
-  return proxyBaseFromEnv().length > 0;
+function abortError(signal: AbortSignal): DOMException {
+  return signal.reason instanceof DOMException
+    ? signal.reason
+    : new DOMException("Request aborted", "AbortError");
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 5_000): Promise<Response> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timer);
-  }
+async function awaitWithSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) throw abortError(signal);
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortError(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 function baseFromDiscoveryPayload(payload: unknown): string {
@@ -51,14 +61,39 @@ function baseFromDiscoveryPayload(payload: unknown): string {
   }
 }
 
-async function discoverProxyBase(): Promise<string> {
+async function isHealthy(base: string, signal?: AbortSignal): Promise<boolean> {
+  if (!base || (unhealthyUntil.get(base) ?? 0) > Date.now()) return false;
+  try {
+    const { response } = await fetchTextResponse(
+      `${base}/health`,
+      { cache: "no-store", signal },
+      4_000,
+    );
+    if (response.ok) {
+      unhealthyUntil.delete(base);
+      return true;
+    }
+  } catch {
+    if (signal?.aborted) throw abortError(signal);
+    // Cache a short failure so parallel requests do not stampede a dead tunnel.
+  }
+  unhealthyUntil.set(base, Date.now() + FAILURE_CACHE_MS);
+  return false;
+}
+
+async function discoverProxyBase(targetGeneration: number): Promise<string> {
   for (const url of DISCOVERY_URLS) {
+    if (targetGeneration !== generation) return "";
     try {
       const separator = url.includes("?") ? "&" : "?";
-      const res = await fetchWithTimeout(`${url}${separator}t=${Date.now()}`, { cache: "no-store" });
-      if (!res.ok) continue;
-      const base = baseFromDiscoveryPayload(await res.json());
-      if (/^https:\/\//i.test(base)) return base;
+      const { response, text } = await fetchTextResponse(
+        `${url}${separator}t=${Date.now()}`,
+        { cache: "no-store" },
+        6_000,
+      );
+      if (!response.ok) continue;
+      const base = baseFromDiscoveryPayload(JSON.parse(text));
+      if (/^https:\/\//i.test(base) && await isHealthy(base)) return base;
     } catch {
       /* try next */
     }
@@ -66,40 +101,46 @@ async function discoverProxyBase(): Promise<string> {
   return "";
 }
 
-/** Resolve proxy base: stable build-time URL first, optional discovery document second. */
-export async function resolveProxyBase(forceRefresh = false): Promise<string> {
+/** Resolve proxy base: stable build-time URL first, then a health-checked discovery document. */
+export async function resolveProxyBase(forceRefresh = false, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) throw abortError(signal);
   if (forceRefresh) {
+    if (resolving?.force) return awaitWithSignal(resolving.promise, signal);
+    generation += 1;
     resolved = undefined;
+    resolvedAt = 0;
+    unavailableUntil = 0;
     resolving = null;
   }
-  const fromEnv = proxyBaseFromEnv();
-  if (fromEnv) {
-    // Prefer env, but fall back to discovery if the baked URL is dead (ephemeral tunnels).
-    try {
-      const res = await fetchWithTimeout(`${fromEnv}/health`, { cache: "no-store" }, 4_000);
-      if (res.ok) return fromEnv;
-    } catch {
-      /* fall through */
-    }
+  if (!forceRefresh && resolved && Date.now() - resolvedAt < HEALTH_CACHE_MS) return resolved;
+  if (!forceRefresh && unavailableUntil > Date.now()) return "";
+
+  const targetGeneration = generation;
+  if (resolving?.generation === targetGeneration) {
+    return awaitWithSignal(resolving.promise, signal);
   }
-  if (resolved) {
-    try {
-      const res = await fetchWithTimeout(`${resolved}/health`, { cache: "no-store" }, 4_000);
-      if (res.ok) return resolved;
-    } catch {
-      /* rediscover a rotated tunnel */
-    }
-    resolved = undefined;
-  }
-  if (!resolving) {
-    resolving = discoverProxyBase().then((base) => {
-      // Cache successes only — ephemeral tunnels / cold start must be retriable.
-      resolved = base || undefined;
-      resolving = null;
-      return base;
-    });
-  }
-  return resolving;
+
+  const accept = (base: string) => {
+    if (targetGeneration !== generation) return "";
+    resolved = base || undefined;
+    resolvedAt = base ? Date.now() : 0;
+    unavailableUntil = base ? 0 : Date.now() + FAILURE_CACHE_MS;
+    return base;
+  };
+  const promise = (async () => {
+    const fromEnv = proxyBaseFromEnv();
+    if (fromEnv && await isHealthy(fromEnv)) return accept(fromEnv);
+    if (resolved && await isHealthy(resolved)) return accept(resolved);
+
+    const base = await discoverProxyBase(targetGeneration);
+    return accept(base);
+  })();
+  resolving = { generation: targetGeneration, force: forceRefresh, promise };
+  const clearResolving = () => {
+    if (resolving?.promise === promise) resolving = null;
+  };
+  void promise.then(clearResolving, clearResolving);
+  return awaitWithSignal(promise, signal);
 }
 
 export function chatUrl(base: string): string {

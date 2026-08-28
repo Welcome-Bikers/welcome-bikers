@@ -10,7 +10,7 @@ export const NAV_ZOOM_MAX = 18.2;
 
 export type NavPoint = { lat: number; lon: number };
 
-export function clamp01(value: number): number {
+function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 

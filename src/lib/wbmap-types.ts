@@ -17,7 +17,7 @@ export const NAV_PUCK_HTML = `<span class="wb-gl-me wb-garrow wb-nav-puck" data-
 
 export type MapKind = "vector-light" | "vector-dark" | "satellite";
 
-export type WbCamera = {
+type WbCamera = {
   getBearing: () => number;
   getZoom: () => number;
 };

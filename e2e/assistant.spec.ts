@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { fulfillChatJson, mockProxyBase, mockProxyChat } from "./helpers/mockProxy";
+import { fulfillChatJson, mockProxyBase, mockProxyChat, mockProxySpeech } from "./helpers/mockProxy";
 
 test.describe("Real Bro assistant", () => {
   test("opens from the main page with a greeting and text input", async ({ page }) => {
@@ -73,6 +73,47 @@ test.describe("Real Bro assistant", () => {
     await page.getByTestId("assistant-send").tap();
     await expect(page.locator(".rb-bubble.bro").last()).toContainText(/Live AI is offline/i);
     await expect(page.locator(".rb-state")).toHaveText("Offline mode");
+  });
+
+  test("processes every queued message once and in order", async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(HTMLMediaElement.prototype, "play", {
+        configurable: true,
+        value() {
+          const media = this as HTMLMediaElement;
+          if (!media.src.startsWith("data:audio/wav")) {
+            queueMicrotask(() => media.dispatchEvent(new Event("playing")));
+            window.setTimeout(() => media.dispatchEvent(new Event("ended")), 20);
+          }
+          return Promise.resolve();
+        },
+      });
+    });
+    await mockProxyBase(page);
+    await mockProxySpeech(page);
+    const received: string[] = [];
+    await mockProxyChat(page, async (route, lastUserText) => {
+      received.push(lastUserText);
+      if (received.length === 1) await new Promise((resolve) => setTimeout(resolve, 250));
+      await fulfillChatJson(route, { reply: `Reply ${received.length}: ${lastUserText}`, intent: "chat" });
+    });
+
+    await page.goto("/#/");
+    await page.getByTestId("assistant-row").tap();
+    const input = page.getByTestId("assistant-input");
+    for (const text of ["queue alpha", "queue beta", "queue gamma"]) {
+      await input.fill(text);
+      await page.getByTestId("assistant-send").tap();
+    }
+
+    await expect(page.locator(".rb-bubble.bro").filter({ hasText: "Reply 3: queue gamma" })).toBeVisible();
+    expect(received).toEqual(["queue alpha", "queue beta", "queue gamma"]);
+    const answers = await page.locator(".rb-bubble.bro").allTextContents();
+    expect(answers.filter((text) => /^Reply \d:/.test(text))).toEqual([
+      "Reply 1: queue alpha",
+      "Reply 2: queue beta",
+      "Reply 3: queue gamma",
+    ]);
   });
 
   test("closing Real Bro cancels a delayed provider reply", async ({ page }) => {

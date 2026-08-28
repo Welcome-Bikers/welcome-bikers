@@ -10,6 +10,7 @@ const tries = [
 ];
 
 let ok = false;
+let speechSample = null;
 for (const cfg of tries) {
   const res = await fetch("https://openrouter.ai/api/v1/audio/speech", {
     method: "POST",
@@ -34,6 +35,7 @@ for (const cfg of tries) {
     continue;
   }
   console.log("TTS OK", cfg.model, cfg.voice, "bytes=", buf.byteLength);
+  speechSample = Buffer.from(buf);
   ok = true;
   break;
 }
@@ -42,3 +44,28 @@ if (!ok) {
   console.error("All TTS probes failed");
   process.exit(1);
 }
+
+const transcription = await fetch("https://openrouter.ai/api/v1/audio/transcriptions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://welcome-bikers.github.io/welcome-bikers/",
+    "X-Title": "Welcome Bikers CI voice roundtrip",
+  },
+  body: JSON.stringify({
+    model: "openai/whisper-1",
+    input_audio: { data: speechSample.toString("base64"), format: "mp3" },
+  }),
+});
+const transcriptBody = await transcription.text();
+if (!transcription.ok) {
+  console.error("STT probe failed", transcription.status, transcriptBody.slice(0, 300));
+  process.exit(1);
+}
+const transcript = String(JSON.parse(transcriptBody)?.text || "").trim();
+if (!/real|bro|online|ride/i.test(transcript)) {
+  console.error("STT probe returned an unexpected transcript", transcript.slice(0, 160));
+  process.exit(1);
+}
+console.log("Voice roundtrip OK transcript=", transcript.slice(0, 100));

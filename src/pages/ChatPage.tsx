@@ -13,7 +13,6 @@ const ROOMS = [
   { id: "montenegro", title: "Montenegro", text: "Coast and mountains" },
   { id: "routes", title: "Routes", text: "Share tracks and GPX" },
   { id: "events", title: "Events", text: "Festivals and meetups" },
-  { id: "test", title: "Chat test", text: "Sandbox room" },
 ];
 
 export function ChatList() {
@@ -50,7 +49,17 @@ export function ChatRoom() {
   const [seed, setSeed] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
-    loadChat().then(setSeed);
+    let active = true;
+    loadChat()
+      .then((messages) => {
+        if (active) setSeed(messages);
+      })
+      .catch(() => {
+        if (active) setSeed([]);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const messages = useMemo(() => {
@@ -79,6 +88,9 @@ export function ChatRoom() {
   return (
     <div className="page">
       <TopBar title={meta.title} />
+      <p className="muted" style={{ padding: "0 16px" }}>
+        Preview chat: messages are stored only on this device.
+      </p>
       <div className="bubble-wrap">
         {messages.map((m) => (
           <div key={m.id} className={`bubble ${m.userId === store.get().user?.id ? "me" : ""}`}>

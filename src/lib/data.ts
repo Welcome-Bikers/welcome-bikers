@@ -41,7 +41,7 @@ function enrich(raw: Place): Place {
 export async function loadPlaces(): Promise<Place[]> {
   if (cache) return cache;
   const rows = await loadArray<Place>("data/objects.json");
-  const pending = (store.get().pendingPlaces as Place[]) ?? [];
+  const pending = store.get().pendingPlaces;
   cache = [...pending.map(enrich), ...rows.map(enrich)];
   return cache;
 }
