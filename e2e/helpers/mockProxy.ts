@@ -1,13 +1,17 @@
 import type { Page, Route } from "@playwright/test";
 
 export async function mockProxyBase(page: Page, base = "https://proxy.test") {
-  await page.route("**/or-proxy.json*", (route) =>
-    route.fulfill({
+  await page.route("**/or-proxy.json*", (route) => {
+    const direct = JSON.stringify({ base });
+    const body = new URL(route.request().url()).hostname === "api.github.com"
+      ? JSON.stringify({ encoding: "base64", content: Buffer.from(direct).toString("base64") })
+      : direct;
+    return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ base }),
-    }),
-  );
+      body,
+    });
+  });
   await page.route(`${base}/health`, (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' }),
   );

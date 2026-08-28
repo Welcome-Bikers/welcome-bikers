@@ -4,6 +4,7 @@ import { fetchTextResponse } from "./net";
 
 const viteEnv = import.meta.env ?? {};
 const DEFAULT_DISCOVERY_URLS = [
+  "https://api.github.com/repos/Welcome-Bikers/welcome-bikers/contents/public/or-proxy.json?ref=proxy-url",
   "https://raw.githubusercontent.com/Welcome-Bikers/welcome-bikers/proxy-url/public/or-proxy.json",
   "or-proxy.json",
 ];
