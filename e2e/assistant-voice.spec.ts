@@ -226,7 +226,7 @@ test.describe("Real Bro mobile voice (MediaRecorder path)", () => {
     let speechHits = 0;
     await page.route(/\/speech\/?$/, async (route) => {
       speechHits += 1;
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
       try {
         await route.fulfill({
           status: 200,
@@ -289,6 +289,9 @@ test.describe("Real Bro mobile voice (MediaRecorder path)", () => {
       "https://proxy-old.test",
       "https://proxy-new.test",
     ]);
+    await page.route("http://127.0.0.1:8787/health", (route) =>
+      route.fulfill({ status: 503, contentType: "application/json", body: '{"ok":false}' }),
+    );
     let oldHits = 0;
     let newHits = 0;
     await page.route("https://proxy-old.test/transcribe", async (route) => {
