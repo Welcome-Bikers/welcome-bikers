@@ -24,7 +24,7 @@ jobs:
     env:
       OPENROUTER_API_KEY: ${{ secrets.VITE_OPENROUTER_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check Real Bro proxy configuration
         id: config
@@ -37,7 +37,7 @@ jobs:
             echo "OpenRouter secret is not configured; the proxy tunnel is skipped."
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.config.outputs.enabled == 'true'
         with:
           node-version: 22
@@ -67,55 +67,10 @@ jobs:
         if: steps.config.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          /tmp/cloudflared tunnel --url http://127.0.0.1:8787 > /tmp/tunnel.log 2>&1 &
-          echo "$!" > /tmp/tunnel.pid
-          PROXY_URL=""
-          for i in $(seq 1 90); do
-            PROXY_URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' /tmp/tunnel.log | head -n1 || true)
-            if [ -n "$PROXY_URL" ]; then break; fi
-            sleep 1
-          done
-          if [ -z "$PROXY_URL" ]; then
-            echo "Tunnel URL not found"
-            cat /tmp/tunnel.log || true
-            cat /tmp/proxy.log || true
-            exit 1
-          fi
-          echo "PROXY_URL=$PROXY_URL"
-          echo "$PROXY_URL" > /tmp/proxy-url.txt
-          BODY=$(printf '{"base":"%s","updatedAt":"%s"}' "$PROXY_URL" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")
-          mkdir -p /tmp/disc/public
-          printf '%s\n' "$BODY" > /tmp/disc/public/or-proxy.json
-          # Dedicated discovery branch (raw.githubusercontent.com/.../proxy-url/...)
-          rm -rf /tmp/disc-repo
-          mkdir -p /tmp/disc-repo/public
-          cp /tmp/disc/public/or-proxy.json /tmp/disc-repo/public/or-proxy.json
-          git -C /tmp/disc-repo init
-          git -C /tmp/disc-repo checkout -b proxy-url
-          git -C /tmp/disc-repo add public/or-proxy.json
-          git -C /tmp/disc-repo -c user.name="Welcome-Bikers" -c user.email="321496092+Welcome-Bikers@users.noreply.github.com" commit -m "Refresh Real Bro proxy endpoint."
-          git -C /tmp/disc-repo remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git -C /tmp/disc-repo push -f origin proxy-url
-          echo "Published discovery → https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/proxy-url/public/or-proxy.json"
+        run: bash scripts/openrouter-proxy-tunnel.sh bring_up
+
       - name: Keep tunnel alive
         if: steps.config.outputs.enabled == 'true'
-        run: |
-          echo "Proxy up — holding runner ($(cat /tmp/proxy-url.txt))"
-          public_failures=0
-          while true; do
-            kill -0 "$(cat /tmp/tunnel.pid)" || { echo "tunnel died"; exit 1; }
-            curl -fsS "http://127.0.0.1:8787/health" >/dev/null || { echo "proxy died"; exit 1; }
-            if curl --max-time 15 -fsS "$(cat /tmp/proxy-url.txt)/health" >/dev/null; then
-              public_failures=0
-            else
-              public_failures=$((public_failures + 1))
-              echo "public tunnel health check failed (${public_failures}/3)"
-              if [ "$public_failures" -ge 3 ]; then
-                echo "public tunnel is unavailable"
-                exit 1
-              fi
-            fi
-            sleep 60
-          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/openrouter-proxy-tunnel.sh keep_alive
